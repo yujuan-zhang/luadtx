@@ -1,0 +1,40 @@
+name: luadtx-local
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: luadtx
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-luadtx_dev}
+      POSTGRES_DB: luadtx
+    volumes:
+      - postgres_local_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U luadtx -d luadtx"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://luadtx:${POSTGRES_PASSWORD:-luadtx_dev}@postgres:5432/luadtx
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      API_URL: http://backend:8000
+    ports:
+      - "127.0.0.1:8501:8501"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_local_data:

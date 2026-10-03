@@ -44,8 +44,9 @@ visualizations.
 ```
 
 Five Docker containers (`docker-compose.yml`): `nginx`, `certbot` (automatic Let's Encrypt renewal),
-`frontend`, `backend`, `postgres`. `frontend` / `backend` / `postgres` publish no host ports — everything
-talks over Docker's internal network. **nginx is the only public entry point.**
+`frontend`, `backend`, `postgres`. The frontend and backend publish no host ports;
+nginx routes their UI/API traffic. Postgres publishes port 5432 in this production
+configuration. For local development, use `compose.local.yml` below.
 
 ## Current Status
 
@@ -198,13 +199,27 @@ real run against the backend (~2–5 minutes: real MHC binding prediction + vacc
 
 ## Quickstart — Local, Docker
 
+From the repository root, use the dedicated local configuration:
+
 ```bash
-docker compose up -d --build
+docker compose -f compose.local.yml up -d --build
 ```
 
-Brings up `postgres`, `backend`, and `frontend` together; `backend` creates its own tables on startup
-(`db.init_db()`). There's no nginx/TLS layer locally by default — just expose whichever container's port
-you need by adding a `ports:` mapping to it in `docker-compose.yml`.
+Open http://localhost:8501 for the UI and http://localhost:8000/docs for the API.
+The backend health endpoint is http://localhost:8000/health. This configuration
+starts Postgres, backend and frontend without production nginx or certificates.
+It waits for Postgres to become ready before starting the backend. API/UI ports
+are bound to localhost; the database is available only inside the Compose network.
+The first build installs dependencies and downloads MHCflurry weights, requiring
+network access; the 2–5 minute analysis estimate does not include that build.
+
+```bash
+docker compose -f compose.local.yml logs backend
+docker compose -f compose.local.yml down
+```
+
+`down` preserves the local database volume. The existing `docker-compose.yml`
+remains the production configuration with nginx/TLS and needs its certificates.
 
 ## Deployment
 
@@ -293,3 +308,4 @@ infra/cloudformation.yaml          Complete AWS deployment IaC template (EC2/S3/
 - Drug-evidence sources are the curated KB and CIViC only; no OncoKB integration (it requires a licensed
   token this project doesn't have).
 - No LICENSE file is currently present in this repository.
+
