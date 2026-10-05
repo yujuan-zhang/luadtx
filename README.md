@@ -1,5 +1,7 @@
 # LUADtx — LUAD Precision Platform
 
+## What it does
+
 An end-to-end targeted-therapy matching / neoantigen vaccine design pipeline for lung adenocarcinoma
 (LUAD). Upload a somatic VCF, a tumor expression matrix, and HLA typing — one request (~2–5 minutes)
 returns ranked drug matches, ranked neoantigen candidates, a designed vaccine peptide, and KEGG pathway
@@ -7,7 +9,41 @@ visualizations.
 
 **Live app: https://luadtx.stoichioomics.com/** (real domain, real HTTPS — the same code described below)
 
-## Table of Contents
+## Input
+
+Somatic variants as VCF/VCF.GZ, tumor expression as TSV/TSV.GZ, and HLA typing as TSV. The bundled expression table includes `SYMBOL` and `TPM_GENE`; HLA uses `locus` and `allele`. Files in `data/demo/` show the expected formats.
+
+## Output
+
+The UI displays tables and plots. `POST /analyze` returns JSON with `funnel`, `variants`, `drug_matches`, `neoantigens`, `vaccine_construct` and `pathways`; the backend also stores the result in Postgres.
+
+## Try it
+
+### Quickstart — Local, Docker
+
+From the repository root, use the dedicated local configuration:
+
+```bash
+docker compose -f compose.local.yml up -d --build
+```
+
+Open http://localhost:8501 for the UI and http://localhost:8000/docs for the API.
+The backend health endpoint is http://localhost:8000/health. This configuration
+starts Postgres, backend and frontend without production nginx or certificates.
+It waits for Postgres to become ready before starting the backend. API/UI ports
+are bound to localhost; the database is available only inside the Compose network.
+The first build installs dependencies and downloads MHCflurry weights, requiring
+network access; the 2–5 minute analysis estimate does not include that build.
+
+```bash
+docker compose -f compose.local.yml logs backend
+docker compose -f compose.local.yml down
+```
+
+`down` preserves the local database volume. The existing `docker-compose.yml`
+remains the production configuration with nginx/TLS and needs its certificates.
+
+### Table of Contents
 
 - [Architecture](#architecture)
 - [Current Status](#current-status)
@@ -22,7 +58,7 @@ visualizations.
 - [Project Structure](#project-structure)
 - [Known Limitations](#known-limitations)
 
-## Architecture
+### Architecture
 
 ```
                      ┌─────────────────────────────────────┐
@@ -48,7 +84,7 @@ Five Docker containers (`docker-compose.yml`): `nginx`, `certbot` (automatic Let
 nginx routes their UI/API traffic. Postgres publishes port 5432 in this production
 configuration. For local development, use `compose.local.yml` below.
 
-## Current Status
+### Current Status
 
 Phase 4 — full real pipeline, running persistently in the cloud.
 
@@ -65,7 +101,7 @@ tier the same way as the demo case.
 - `data/demo/case_metadata.json` — real GDC clinical data (age, sex, stage, vital status, smoking
   history); missing fields are shown as "Not available", never guessed
 
-## Pipeline Details
+### Pipeline Details
 
 `vep.py` calls the real Ensembl VEP REST API (`rest.ensembl.org/vep/human/region`, free, no token,
 GRCh38). `canonical=1` pins annotation to each gene's canonical transcript; `gene` / `consequence` /
@@ -116,7 +152,7 @@ sequential; it was the single largest measured bottleneck in the whole pipeline 
   objective — just not a reimplementation of pVACvector's own simulated-annealing search or its
   multi-algorithm median scoring (irrelevant when only one algorithm, MHCflurry, is in use).
 
-## Pipeline Funnel
+### Pipeline Funnel
 
 `main.py` reports how many variants are filtered out at each stage, not just the final three tables
 (numbers are real, not fixed), with per-stage timing (`[timing]` log lines) so real bottlenecks are
@@ -131,7 +167,7 @@ Real peptide generated        12  (missense only, real sequence fetched + positi
 HLA-presented                 69  (IC50 <= 500nM, real mhcflurry prediction)
 ```
 
-## Pathway Visualization
+### Pathway Visualization
 
 `pathway.py` (same design as `luad_workflow/modules/06_pathway/kegg_viewer.py`) overlays colored blocks on
 locally cached KEGG official PNGs using Pillow — no call to pathview or Cytoscape. Pathway membership comes
@@ -154,7 +190,7 @@ hit mutated gene are rendered. Color coding:
 
 `build_kegg_url()` also generates a link to KEGG's own colored pathway viewer as a fallback/cross-check.
 
-## Data Persistence (Postgres)
+### Data Persistence (Postgres)
 
 `backend/db.py` handles the Postgres connection. Two tables: `cases` (case metadata, JSONB clinical
 fields) and `analysis_results` (the complete output of every `/analyze` call, stored as one JSONB row with
@@ -171,7 +207,7 @@ python -m scripts.seed_postgres
 The connection string is read from the `DATABASE_URL` environment variable, falling back to the dev
 default in `docker-compose.yml` when unset.
 
-## Quickstart — Local, Bare Python
+### Quickstart — Local, Bare Python
 
 ```bash
 python -m venv .venv
@@ -197,33 +233,9 @@ result instantly (read from a precomputed cache — see below). Upload your own 
 optional `case_metadata.json` for real clinical info) in the sidebar and click "Run analysis" to trigger a
 real run against the backend (~2–5 minutes: real MHC binding prediction + vaccine construct design).
 
-## Quickstart — Local, Docker
+### Deployment
 
-From the repository root, use the dedicated local configuration:
-
-```bash
-docker compose -f compose.local.yml up -d --build
-```
-
-Open http://localhost:8501 for the UI and http://localhost:8000/docs for the API.
-The backend health endpoint is http://localhost:8000/health. This configuration
-starts Postgres, backend and frontend without production nginx or certificates.
-It waits for Postgres to become ready before starting the backend. API/UI ports
-are bound to localhost; the database is available only inside the Compose network.
-The first build installs dependencies and downloads MHCflurry weights, requiring
-network access; the 2–5 minute analysis estimate does not include that build.
-
-```bash
-docker compose -f compose.local.yml logs backend
-docker compose -f compose.local.yml down
-```
-
-`down` preserves the local database volume. The existing `docker-compose.yml`
-remains the production configuration with nginx/TLS and needs its certificates.
-
-## Deployment
-
-### Production: AWS EC2 + CloudFormation (what luadtx.stoichioomics.com actually runs)
+#### Production: AWS EC2 + CloudFormation (what luadtx.stoichioomics.com actually runs)
 
 `infra/cloudformation.yaml` is the complete Infrastructure-as-Code definition — one command provisions
 everything:
@@ -253,7 +265,7 @@ RDS and ECR are deliberately not used — Postgres runs as a container directly 
 image is built on-instance rather than pulled from a registry. At this single-instance scale, both would
 be unnecessary added cost and complexity.
 
-### Demo: Streamlit Community Cloud (read-only, no server required)
+#### Demo: Streamlit Community Cloud (read-only, no server required)
 
 `frontend/streamlit_app.py` itself only depends on `streamlit` / `pandas` / `requests` (it never imports
 any pipeline code), so this deployment only needs the lightweight `frontend/requirements.txt` — no
@@ -265,7 +277,7 @@ frontend degrades gracefully with a message instead of crashing.
 To deploy: push the repo to GitHub, then in share.streamlit.io select this repo with **Main file path set
 to `frontend/streamlit_app.py`** (Cloud auto-detects `requirements.txt` in the same directory).
 
-## Precomputed Demo Results
+### Precomputed Demo Results
 
 The demo case's answer never changes, so there's no reason to re-run the real ~2-minute pipeline on every
 page load. `scripts/precompute_demo.py` saves `run_pipeline()`'s output to
@@ -276,7 +288,7 @@ by default for an instant load. Regenerate it after changing the demo data or pi
 python -m scripts.precompute_demo
 ```
 
-## Project Structure
+### Project Structure
 
 ```
 data/demo/                         Default case TCGA-38-4627: real VCF + real expression + synthetic HLA + real clinical + precomputed result
@@ -297,7 +309,7 @@ nginx/conf.d/                      Reverse proxy config: / -> frontend, /api/ ->
 infra/cloudformation.yaml          Complete AWS deployment IaC template (EC2/S3/Secrets Manager/IAM/security group/DNS/TLS)
 ```
 
-## Known Limitations
+### Known Limitations
 
 - HLA typing in both bundled demo cases is **synthetic** — neither TCGA case has real HLA typing on file;
   this is clearly labeled in the UI, never presented as real.

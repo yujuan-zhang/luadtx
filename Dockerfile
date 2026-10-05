@@ -24,3 +24,4 @@ RUN python -c "from mhcflurry.downloads_command import run; run(['fetch', 'model
 
 EXPOSE 8000
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
